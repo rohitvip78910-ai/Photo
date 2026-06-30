@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Photo Background Changer, Resizer & Print</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
+    <title>Lite Photo Editor & Printer</title>
+    <script src="https://unpkg.com/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
+    <script src="https://unpkg.com/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -21,7 +21,7 @@
             padding: 30px;
             border-radius: 12px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            max-width: 600px;
+            max-width: 500px;
             width: 100%;
             text-align: center;
         }
@@ -58,11 +58,13 @@
         .btn-success { background-color: #28a745; }
         .btn-success:hover { background-color: #218838; }
         .btn-primary { background-color: #007bff; display: none; }
-        .btn-primary:hover { background-color: #0069d9; }
         
         #loading {
             display: none;
-            color: #007bff;
+            color: #ffc107;
+            background: #333;
+            padding: 10px;
+            border-radius: 5px;
             font-weight: bold;
             margin-top: 15px;
         }
@@ -77,7 +79,6 @@
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             object-fit: cover;
         }
-
         @media print {
             body { background-color: white; padding: 0; }
             .container { display: none; }
@@ -89,7 +90,7 @@
 <body>
 
 <div class="container">
-    <h2>Photo Editor & Printer</h2>
+    <h2>Lite Photo Editor</h2>
     
     <div class="form-group">
         <label for="imageInput">আপনার ছবি সিলেক্ট করুন:</label>
@@ -97,28 +98,27 @@
     </div>
 
     <div class="form-group">
-        <label for="bgColor">নতুন ব্যাকগ্রাউন্ড কালার সিলেক্ট করুন:</label>
+        <label for="bgColor">ব্যাকগ্রাউন্ড কালার:</label>
         <input type="color" id="bgColor" value="#3498db">
     </div>
 
     <div class="form-group">
-        <label for="sizeSelect">ছবির সাইজ বেছে নিন:</label>
+        <label for="sizeSelect">ছবির সাইজ:</label>
         <select id="sizeSelect">
-            <option value="passport">Passport Size (40mm x 50mm)</option>
-            <option value="stamp">Stamp Size (20mm x 25mm)</option>
-            <option value="custom">Custom (Square - 300x300 px)</option>
+            <option value="passport">Passport Size</option>
+            <option value="stamp">Stamp Size</option>
         </select>
     </div>
 
     <div class="form-group">
-        <label for="photoCount">ছবির সংখ্যা (কয়টি ছবি চান):</label>
-        <input type="number" id="photoCount" min="1" max="20" value="1">
+        <label for="photoCount">ছবির সংখ্যা:</label>
+        <input type="number" id="photoCount" min="1" max="10" value="1">
     </div>
 
     <button class="btn btn-success" onclick="processImage()">ছবি তৈরি করুন</button>
-    <button id="printBtn" class="btn btn-primary" onclick="printPhotos()">ছবি প্রিন্ট করুন</button>
+    <button id="printBtn" class="btn btn-primary" onclick="window.print()">ছবি প্রিন্ট করুন</button>
     
-    <div id="loading">দয়া করে অপেক্ষা করুন, AI প্রথমবার লোড হতে একটু সময় নিতে পারে...</div>
+    <div id="loading">প্রসেস হচ্ছে... অনুগ্রহ করে কয়েক সেকেন্ড স্ক্রিনে টাচ করবেন না।</div>
 </div>
 
 <div id="resultContainer"></div>
@@ -126,14 +126,9 @@
 <script>
 let net = null;
 
-// Hex কালারকে RGB তে কনভার্ট করার ফাংশন
 function hexToRgb(hex) {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16)
-    } : { r: 0, g: 0, b: 0 };
+    return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) } : { r: 0, g: 0, b: 0 };
 }
 
 async function processImage() {
@@ -146,7 +141,7 @@ async function processImage() {
     const printBtn = document.getElementById('printBtn');
     
     if (fileInput.files.length === 0) {
-        alert("দয়া করে প্রথমে একটি ছবি আপলোড করুন!");
+        alert("দয়া করে একটি ছবি আপলোড করুন!");
         return;
     }
 
@@ -163,64 +158,58 @@ async function processImage() {
         
         img.onload = async function() {
             try {
-                // বডি-পিক্স মডেল লোড করা (যদি আগে থেকে না থাকে)
+                // ফোনের র‍্যাম বাঁচাতে বড় ছবিকে প্রথমেই মনে মনে ছোট (Resize) করে নেওয়া হচ্ছে
+                const maxDim = 400; 
+                let scale = Math.min(maxDim / img.width, maxDim / img.height);
+                if(scale > 1) scale = 1;
+                
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = img.width * scale;
+                tempCanvas.height = img.height * scale;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+
+                // অতি লাইটওয়েট মোডে AI মডেল লোড করা
                 if (!net) {
                     net = await bodyPix.load({
                         architecture: 'MobileNetV1',
                         outputStride: 16,
-                        multiplier: 0.75,
-                        quantBytes: 2
+                        multiplier: 0.50, // প্রসেসর লোড কমানো হয়েছে
+                        quantBytes: 1
                     });
                 }
 
-                // ছবিতে মানুষ বা অবজেক্ট ডিটেক্ট করা
-                const segmentation = await net.segmentPerson(img, {
-                    internalResolution: 'high',
+                // দ্রুত সেগমেন্টেশন সম্পন্ন করা
+                const segmentation = await net.segmentPerson(tempCanvas, {
+                    internalResolution: 'low', // দ্রুত কাজের জন্য লো রেজোলিউশন
                     segmentationThreshold: 0.7
                 });
 
-                // নতুন সাইজ সেট করা
-                let width, height;
-                if (sizeSelect === "passport") {
-                    width = 150; height = 188; 
-                } else if (sizeSelect === "stamp") {
-                    width = 80; height = 100;
-                } else {
-                    width = 200; height = 200; 
-                }
+                let width = sizeSelect === "passport" ? 150 : 80;
+                let height = sizeSelect === "passport" ? 188 : 100;
 
-                // প্রথম ক্যানভাসে ছবি এবং ব্যাকগ্রাউন্ড রিমুভাল প্রসেস করা
-                const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
-
-                const imgData = ctx.getImageData(0, 0, img.width, img.height);
+                const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
                 const data = imgData.data;
                 const rgb = hexToRgb(bgColorHex);
 
-                // পিক্সেল বাই পিক্সেল ব্যাকগ্রাউন্ড কালার রিপ্লেস করা
                 for (let i = 0; i < segmentation.data.length; i++) {
-                    // যদি পিক্সেলটি ব্যাকগ্রাউন্ড হয় (0 মানে ব্যাকগ্রাউন্ড)
                     if (segmentation.data[i] === 0) {
-                        data[i * 4] = rgb.r;     // Red
-                        data[i * 4 + 1] = rgb.g; // Green
-                        data[i * 4 + 2] = rgb.b; // Blue
+                        data[i * 4] = rgb.r;
+                        data[i * 4 + 1] = rgb.g;
+                        data[i * 4 + 2] = rgb.b;
                     }
                 }
-                ctx.putImageData(imgData, 0, 0);
+                tempCtx.putImageData(imgData, 0, 0);
 
-                // দ্বিতীয় ক্যানভাসে সাইজ ছোট/বড় (Resize) করা
-                const resizeCanvas = document.createElement('canvas');
-                resizeCanvas.width = width;
-                resizeCanvas.height = height;
-                const resizeCtx = resizeCanvas.getContext('2d');
-                resizeCtx.drawImage(canvas, 0, 0, width, height);
+                // ফাইনাল আউটপুট সাইজ ক্যানভাস
+                const finalCanvas = document.createElement('canvas');
+                finalCanvas.width = width;
+                finalCanvas.height = height;
+                const finalCtx = finalCanvas.getContext('2d');
+                finalCtx.drawImage(tempCanvas, 0, 0, width, height);
 
-                const finalDataUrl = resizeCanvas.toDataURL('image/jpeg');
+                const finalDataUrl = finalCanvas.toDataURL('image/jpeg', 0.9);
 
-                // স্ক্রিনে ছবিগুলো দেখানো
                 loading.style.display = "none";
                 printBtn.style.display = "block";
                 resultContainer.style.gridTemplateColumns = `repeat(auto-fill, minmax(${width}px, 1fr))`;
@@ -236,16 +225,12 @@ async function processImage() {
 
             } catch (error) {
                 console.error(error);
-                alert("প্রসেস করতে সমস্যা হয়েছে। ছবিটির সাইজ ছোট করে বা অন্য ছবি দিয়ে চেষ্টা করুন।");
+                alert("দুঃখিত, ফোন মেমোরি কম থাকার কারণে প্রসেস করা গেল না।");
                 loading.style.display = "none";
             }
         };
     };
     reader.readAsDataURL(file);
-}
-
-function printPhotos() {
-    window.print();
 }
 </script>
 
