@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Background Changer, Resizer & Print</title>
+    <script src="https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/dist/bundle.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }
+        h2 { color: #333; margin-bottom: 20px; }
+        .form-group {
+            margin-bottom: 15px;
+            text-align: left;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="file"], select, input[type="number"], input[type="color"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+        .btn {
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 15px;
+            transition: background 0.3s;
+            font-weight: bold;
+        }
+        .btn-success { background-color: #28a745; }
+        .btn-success:hover { background-color: #218838; }
+        .btn-primary { background-color: #007bff; display: none; }
+        .btn-primary:hover { background-color: #0069d9; }
+        
+        #loading {
+            display: none;
+            color: #007bff;
+            font-weight: bold;
+            margin-top: 15px;
+        }
+        #resultContainer {
+            margin-top: 25px;
+            display: grid;
+            gap: 10px;
+            justify-content: center;
+        }
+        .output-img {
+            border: 1px solid #ddd;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            object-fit: cover;
+        }
+
+        /* প্রিন্ট করার সময় অপ্রয়োজনীয় জিনিস লুকিয়ে ফেলার জন্য CSS */
+        @media print {
+            body { background-color: white; padding: 0; }
+            .container { display: none; }
+            #resultContainer { margin-top: 0; gap: 5px; }
+            .output-img { border: none; box-shadow: none; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Photo Editor & Printer</h2>
+    
+    <div class="form-group">
+        <label for="imageInput">আপনার ছবি সিলেক্ট করুন:</label>
+        <input type="file" id="imageInput" accept="image/*">
+    </div>
+
+    <div class="form-group">
+        <label for="bgColor">নতুন ব্যাকগ্রাউন্ড কালার সিলেক্ট করুন:</label>
+        <input type="color" id="bgColor" value="#3498db">
+    </div>
+
+    <div class="form-group">
+        <label for="sizeSelect">ছবির সাইজ বেছে নিন:</label>
+        <select id="sizeSelect">
+            <option value="passport">Passport Size (40mm x 50mm)</option>
+            <option value="stamp">Stamp Size (20mm x 25mm)</option>
+            <option value="custom">Custom (Square - 300x300 px)</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="photoCount">ছবির সংখ্যা (কয়টি ছবি চান):</label>
+        <input type="number" id="photoCount" min="1" max="20" value="1">
+    </div>
+
+    <button class="btn btn-success" onclick="processImage()">ছবি তৈরি করুন</button>
+    
+    <button id="printBtn" class="btn btn-primary" onclick="printPhotos()">ছবি প্রিন্ট করুন</button>
+    
+    <div id="loading">দয়া করে অপেক্ষা করুন, ব্যাকগ্রাউন্ড পরিবর্তন করা হচ্ছে...</div>
+</div>
+
+<div id="resultContainer"></div>
+
+<script>
+async function processImage() {
+    const fileInput = document.getElementById('imageInput');
+    const bgColor = document.getElementById('bgColor').value;
+    const sizeSelect = document.getElementById('sizeSelect').value;
+    const photoCount = parseInt(document.getElementById('photoCount').value) || 1;
+    const loading = document.getElementById('loading');
+    const resultContainer = document.getElementById('resultContainer');
+    const printBtn = document.getElementById('printBtn');
+    
+    if (fileInput.files.length === 0) {
+        alert("দয়া করে প্রথমে একটি ছবি আপলোড করুন!");
+        return;
+    }
+
+    loading.style.display = "block";
+    printBtn.style.display = "none"; // নতুন ছবি তৈরির সময় প্রিন্ট বাটন লুপানো থাকবে
+    resultContainer.innerHTML = "";
+
+    const imageFile = fileInput.files[0];
+
+    try {
+        const imageBlob = await imglyBackgroundRemoval(imageFile);
+        
+        const img = new Image();
+        img.src = URL.createObjectURL(imageBlob);
+        
+        img.onload = function() {
+            let width, height;
+            if (sizeSelect === "passport") {
+                width = 150; height = 188; 
+            } else if (sizeSelect === "stamp") {
+                width = 80; height = 100;
+            } else {
+                width = 200; height = 200; 
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0, width, height);
+
+            const finalDataUrl = canvas.toDataURL('image/jpeg');
+
+            loading.style.display = "none";
+            printBtn.style.display = "block"; // ছবি তৈরি শেষে প্রিন্ট বাটন দেখাবে
+            resultContainer.style.gridTemplateColumns = `repeat(auto-fill, minmax(${width}px, 1fr))`;
+
+            for (let i = 0; i < photoCount; i++) {
+                const newImg = document.createElement('img');
+                newImg.src = finalDataUrl;
+                newImg.className = "output-img";
+                newImg.style.width = width + "px";
+                newImg.style.height = height + "px";
+                resultContainer.appendChild(newImg);
+            }
+        };
+
+    } catch (error) {
+        console.error(error);
+        alert("ব্যাকগ্রাউন্ড পরিবর্তন করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।");
+        loading.style.display = "none";
+    }
+}
+
+// প্রিন্ট করার ফাংশন
+function printPhotos() {
+    window.print();
+}
+</script>
+
+</body>
+  </html>
+
